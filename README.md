@@ -254,4 +254,4 @@ python -m chronos info
 python -m chronos validate
 ```
 
-Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, and 3.12: install, unittest, and the three CLI commands above. There is no publish step and the repository is private.
+Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, and 3.12: install, unittest, and the three CLI commands above.
