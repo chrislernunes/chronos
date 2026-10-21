@@ -255,3 +255,9 @@ python -m chronos validate
 ```
 
 Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, and 3.12: install, unittest, and the three CLI commands above.
+
+## Browser console
+
+The page at [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/) is a static build of the same relations (`site/`). It does not call a server. GitHub Pages publishes it from `.github/workflows/pages.yml`.
+
+The Python package is the reference. The page uses integer counts for UTC, TAI, and TT, and IEEE-754 for the Mars24 series and the relativistic rates. Nanosecond rounding of those irrational rates belongs to the Python package, not to the page.
