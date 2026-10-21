@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chronos-timekeeping"
+version = "0.1.0"
+description = "Bounded interplanetary timekeeping: TAI, UTC, TT, Mars mean solar time, and relativistic clock rates"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Chrisler Nunes" }]
+keywords = ["time", "TAI", "UTC", "Mars", "relativity"]
+dependencies = []
+
+[project.optional-dependencies]
+experiments = ["matplotlib>=3.8"]
+
+[project.scripts]
+chronos = "chronos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chronos = ["data/*", "py.typed"]
