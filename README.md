@@ -258,6 +258,8 @@ Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, an
 
 ## Browser console
 
-The source of the browser page is `site/`. It does not call a server. `.github/workflows/pages.yml` installs from the lockfile, runs the browser parity tests, builds `site/dist`, and deploys that directory with the GitHub Pages actions. Vite's `base` is `/chronos/`. The address is [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/) when the repository Pages source is **GitHub Actions**. A branch source does not serve the artifact.
+The source of the browser page is `site/`. It does not call a server. `.github/workflows/pages.yml` installs from the lockfile, runs the browser parity tests, builds `site/dist`, and deploys that directory with the GitHub Pages actions. Vite's `base` is `/chronos/`.
+
+The repository Pages source is still **Deploy from a branch** (`main` `/`). The token available to this repository cannot change that setting. Until it is switched to **GitHub Actions** in the repository Pages settings, GitHub serves the branch. `.nojekyll`, `index.html`, and `assets/` are the production build of `site/dist`, so that branch serves the console rather than a Jekyll rendering of this README. The address is [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/).
 
 The Python package is the reference. The page uses integer counts for UTC, TAI, and TT, and IEEE-754 for the Mars24 series and the relativistic rates. Nanosecond rounding of those irrational rates belongs to the Python package, not to the page.
