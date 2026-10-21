@@ -25,3 +25,19 @@ jobs:
           python -m chronos info
           python -m chronos validate
           python -m chronos convert --from UTC --to TAI --time 2017-01-01T00:00:00Z
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install
+        working-directory: site
+        run: npm ci
+      - name: Browser parity
+        working-directory: site
+        run: npm test

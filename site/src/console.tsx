@@ -4,14 +4,16 @@ import {
   AU_M,
   C_M_S,
   COVERAGE,
+  EARTH_GM,
   EARTH_RADIUS_M,
+  MARS_GM,
   MARS_RADIUS_M,
   MEAN_SOL_DAYS,
   addNanoseconds,
   accumulatedErrorSeconds,
   formatUtc,
   julianDateTt,
-  lightTimeSeconds,
+  lightTimeNanoseconds,
   localSolarTime,
   NS,
   parseUtc,
@@ -21,6 +23,7 @@ import {
   taiMinusUtcSeconds,
   ttNanoseconds,
   twoWaySync,
+  unsupported,
   utcToTaiNs,
   ut1MinusUtc,
   weakFieldRate,
@@ -42,6 +45,7 @@ export function Console() {
   const [longitude, setLongitude] = useState("175.47");
   const [positive, setPositive] = useState<"east" | "west">("east");
   const [model, setModel] = useState<"sr" | "schwarzschild" | "weak">("sr");
+  const [body, setBody] = useState<"earth" | "mars">("earth");
   const [speed, setSpeed] = useState("7800");
   const [radius, setRadius] = useState(String(EARTH_RADIUS_M));
   const [span, setSpan] = useState("86400");
@@ -117,6 +121,8 @@ export function Console() {
           <Rates
             model={model}
             setModel={setModel}
+            body={body}
+            setBody={setBody}
             speed={speed}
             setSpeed={setSpeed}
             radius={radius}
@@ -214,6 +220,8 @@ function Mars(props: {
 function Rates(props: {
   model: "sr" | "schwarzschild" | "weak";
   setModel: (value: "sr" | "schwarzschild" | "weak") => void;
+  body: "earth" | "mars";
+  setBody: (value: "earth" | "mars") => void;
   speed: string;
   setSpeed: (value: string) => void;
   radius: string;
@@ -222,8 +230,8 @@ function Rates(props: {
   setSpan: (value: string) => void;
 }) {
   const sheet = useMemo(
-    () => readRates(props.model, props.speed, props.radius, props.span),
-    [props.model, props.speed, props.radius, props.span],
+    () => readRates(props.model, props.body, props.speed, props.radius, props.span),
+    [props.model, props.body, props.speed, props.radius, props.span],
   );
   const curve = useMemo(() => srCurve(), []);
   return (
@@ -232,7 +240,10 @@ function Rates(props: {
         <div className="flex flex-col gap-2">
           <Mini onClick={() => props.setModel("sr")} label="Inertial SR" active={props.model === "sr"} />
           <Mini
-            onClick={() => props.setModel("schwarzschild")}
+            onClick={() => {
+              props.setModel("schwarzschild");
+              props.setSpeed("0");
+            }}
             label="Schwarzschild, at rest"
             active={props.model === "schwarzschild"}
           />
@@ -246,8 +257,22 @@ function Rates(props: {
         <Field label="Radius (m)" value={props.radius} onChange={props.setRadius} mono />
         <Field label="Coordinate interval (s)" value={props.span} onChange={props.setSpan} mono />
         <div className="flex flex-wrap gap-2">
-          <Mini onClick={() => props.setRadius(String(EARTH_RADIUS_M))} label="Earth a" />
-          <Mini onClick={() => props.setRadius(String(MARS_RADIUS_M))} label="Mars R" />
+          <Mini
+            onClick={() => {
+              props.setBody("earth");
+              props.setRadius(String(EARTH_RADIUS_M));
+            }}
+            label="Earth a"
+            active={props.body === "earth"}
+          />
+          <Mini
+            onClick={() => {
+              props.setBody("mars");
+              props.setRadius(String(MARS_RADIUS_M));
+            }}
+            label="Mars R"
+            active={props.body === "mars"}
+          />
           <Mini onClick={() => props.setSpeed("0")} label="v = 0" />
           <Mini onClick={() => props.setSpeed(String(0.6 * C_M_S))} label="0.6 c" />
         </div>
@@ -311,16 +336,17 @@ function Sync(props: {
         <div className="flex flex-wrap gap-2">
           <Mini
             onClick={() => {
-              props.setDelayAb(String(lightTimeSeconds(AU_M)));
-              props.setDelayBa(String(lightTimeSeconds(AU_M)));
+              const one = formatExactSeconds(lightTimeNanoseconds(AU_M));
+              props.setDelayAb(one);
+              props.setDelayBa(one);
             }}
             label="Symmetric 1 AU"
           />
           <Mini
             onClick={() => {
-              const one = lightTimeSeconds(AU_M);
-              props.setDelayAb(String(one));
-              props.setDelayBa(String(one + 0.2));
+              const one = lightTimeNanoseconds(AU_M);
+              props.setDelayAb(formatExactSeconds(one));
+              props.setDelayBa(formatExactSeconds(one + 200_000_000n));
             }}
             label="+0.2 s asymmetry"
           />
@@ -594,7 +620,13 @@ function readMars(text: string, longitude: string, positive: "east" | "west"): {
   }
 }
 
-function readRates(model: "sr" | "schwarzschild" | "weak", speedText: string, radiusText: string, spanText: string) {
+function readRates(
+  model: "sr" | "schwarzschild" | "weak",
+  body: "earth" | "mars",
+  speedText: string,
+  radiusText: string,
+  spanText: string,
+) {
   const equations = {
     sr: "dτ/dt = √((1−β)(1+β))",
     schwarzschild: "dτ/dt = √(1 − r_s/r),  clock at rest",
@@ -609,13 +641,14 @@ function readRates(model: "sr" | "schwarzschild" | "weak", speedText: string, ra
     const speed = Number(speedText);
     const radius = Number(radiusText);
     const span = Number(spanText);
+    const gm = body === "mars" ? MARS_GM : EARTH_GM;
     if (!Number.isFinite(span) || span < 0) throw new Error("Coordinate interval must be ≥ 0 seconds.");
     let rate: number;
     if (model === "sr") rate = srRate(speed);
     else if (model === "schwarzschild") {
       if (speed !== 0) throw new Error("The stationary Schwarzschild model requires speed 0. Use the weak-field model for slow motion.");
-      rate = schwarzschildRate(radius);
-    } else rate = weakFieldRate(radius, speed);
+      rate = schwarzschildRate(radius, gm);
+    } else rate = weakFieldRate(radius, speed, gm);
     const deficit = span * (rate - 1);
     return {
       kicker: model === "sr" ? "Proper time, constant velocity" : "Gravitational model, bounded",
@@ -626,6 +659,7 @@ function readRates(model: "sr" | "schwarzschild" | "weak", speedText: string, ra
         { label: "dτ/dt", value: rate.toPrecision(12), unit: "dimensionless" },
         { label: "Coordinate interval", value: String(span), unit: "s of this model's t" },
         { label: "Proper − coordinate", value: deficit.toExponential(6), unit: "s" },
+        { label: "Body", value: body, unit: body === "mars" ? "Mars GM, spherical" : "Earth GM, spherical" },
         { label: "Speed", value: String(speed), unit: "m/s" },
         { label: "Radius", value: String(radius), unit: "m" },
       ],
@@ -683,11 +717,23 @@ function refusalRows(text: string): Row[] {
   } catch (error) {
     luminal = message(error);
   }
+  let tdb = "not rejected";
+  try {
+    unsupported("tdb");
+  } catch (error) {
+    tdb = message(error);
+  }
+  let marsProper = "not rejected";
+  try {
+    unsupported("mars-proper-time");
+  } catch (error) {
+    marsProper = message(error);
+  }
   return [
     { label: "This UTC label", value: evaluated, unit: text },
     { label: "Speed = c", value: luminal, unit: "m/s" },
-    { label: "TDB", value: "Unsupported. Needs a planetary ephemeris.", unit: "not computed" },
-    { label: "Mars proper time", value: "Unsupported. Mars24 is not that reduction.", unit: "not computed" },
+    { label: "TDB", value: tdb, unit: "not computed" },
+    { label: "Mars proper time", value: marsProper, unit: "not computed" },
   ];
 }
 
@@ -702,6 +748,14 @@ function srCurve() {
     label: item.label,
     deficit: 86400 * (srRate(item.speed) - 1),
   }));
+}
+
+function formatExactSeconds(nanoseconds: bigint): string {
+  const negative = nanoseconds < 0n;
+  const absolute = negative ? -nanoseconds : nanoseconds;
+  const whole = absolute / NS;
+  const fraction = (absolute % NS).toString().padStart(9, "0").replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole.toString()}${fraction ? `.${fraction}` : ""}`;
 }
 
 function clockFromHours(hours: number): string {

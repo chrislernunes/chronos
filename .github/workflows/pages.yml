@@ -30,6 +30,9 @@ jobs:
       - name: Install
         working-directory: site
         run: npm ci
+      - name: Parity tests
+        working-directory: site
+        run: npm test
       - name: Build
         working-directory: site
         run: npm run build

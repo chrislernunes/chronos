@@ -254,10 +254,10 @@ python -m chronos info
 python -m chronos validate
 ```
 
-Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, and 3.12: install, unittest, and the three CLI commands above.
+Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, and 3.12: install, unittest, and the three CLI commands above. That workflow also runs the browser engine against `tests/fixtures/browser_parity.json`.
 
 ## Browser console
 
-The source of the browser page is `site/`. It does not call a server. `.github/workflows/pages.yml` builds it. The intended address is [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/). GitHub will not serve that address until Pages is set to **GitHub Actions** in the repository settings. The API token used to push this repository cannot change that setting.
+The source of the browser page is `site/`. It does not call a server. `.github/workflows/pages.yml` installs from the lockfile, runs the browser parity tests, builds `site/dist`, and deploys that directory with the GitHub Pages actions. Vite's `base` is `/chronos/`. The address is [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/) when the repository Pages source is **GitHub Actions**. A branch source does not serve the artifact.
 
 The Python package is the reference. The page uses integer counts for UTC, TAI, and TT, and IEEE-754 for the Mars24 series and the relativistic rates. Nanosecond rounding of those irrational rates belongs to the Python package, not to the page.

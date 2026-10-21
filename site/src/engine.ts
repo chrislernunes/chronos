@@ -22,7 +22,10 @@ export const MARS_RADIUS_M = 3_389_500;
 
 export class ChronosError extends Error {}
 export class InvalidInput extends ChronosError {}
+export class InvalidLeapSecond extends InvalidInput {}
 export class DataCoverageError extends ChronosError {}
+export class LeapTableExpired extends DataCoverageError {}
+export class UnsupportedTransformation extends ChronosError {}
 
 export type Utc = {
   year: number;
@@ -81,7 +84,7 @@ export function formatUtc(utc: Utc): string {
 export function utcToTaiNs(utc: Utc, allowExpired = false): bigint {
   const offset = utc.second === 60 ? offsetDuringLeap(utc, allowExpired) : offsetAt(utc, allowExpired);
   if (utc.second === 60 && !isLeapLabel(utc, allowExpired)) {
-    throw new InvalidInput(`${formatUtc(utc)} is not a positive leap second in the bundled IERS table.`);
+    throw new InvalidLeapSecond(`${formatUtc(utc)} is not a positive leap second in the bundled IERS table.`);
   }
   return (posixLike(utc) + BigInt(offset)) * NS + BigInt(utc.nanosecond);
 }
@@ -100,11 +103,17 @@ export function taiToUtc(taiNs: bigint, allowExpired = false): Utc {
   if (index < 0) throw new DataCoverageError("TAI instant precedes the leap-second table.");
   const offset = BigInt(bounds[index].offset);
   if (index + 1 < bounds.length && taiSeconds === bounds[index + 1].taiSeconds - 1n) {
-    if (bounds[index + 1].offset === bounds[index].offset + 1) {
+    const nextOffset = bounds[index + 1].offset;
+    if (nextOffset === bounds[index].offset + 1) {
       const prev = shiftDays(bounds[index + 1].utc, -1);
       const stamp = { ...prev, hour: 23, minute: 59, second: 60, nanosecond };
       requireCoverage(stamp, allowExpired);
       return stamp;
+    }
+    if (nextOffset < bounds[index].offset) {
+      throw new DataCoverageError(
+        "A negative leap second would skip a UTC label. None has been announced; this snapshot does not implement one.",
+      );
     }
   }
   const stamp = fromPosix(taiSeconds - offset, nanosecond);
@@ -262,8 +271,34 @@ export function weakFieldRate(radiusM: number, speedMps: number, gm = EARTH_GM):
 }
 
 export function lightTimeSeconds(distanceM: number): number {
-  if (distanceM < 0) throw new InvalidInput("Distance must be ≥ 0.");
+  if (!Number.isFinite(distanceM) || distanceM < 0) throw new InvalidInput("Distance must be ≥ 0.");
   return distanceM / C_M_S;
+}
+
+/** Half-even nanoseconds of distance/c. Matches the Python reference for integer metres. */
+export function lightTimeNanoseconds(distanceM: number): bigint {
+  if (!Number.isFinite(distanceM) || distanceM < 0) throw new InvalidInput("Distance must be ≥ 0.");
+  if (!Number.isSafeInteger(distanceM)) {
+    throw new InvalidInput("Nanosecond light time requires an integer distance in metres.");
+  }
+  const numerator = BigInt(distanceM) * NS;
+  const denominator = BigInt(C_M_S);
+  const quotient = numerator / denominator;
+  const remainder = numerator % denominator;
+  const twice = remainder * 2n;
+  if (twice > denominator || (twice === denominator && quotient % 2n === 1n)) return quotient + 1n;
+  return quotient;
+}
+
+export function unsupported(kind: "tdb" | "mars-proper-time"): never {
+  if (kind === "tdb") {
+    throw new UnsupportedTransformation(
+      "TDB/TCB conversion is unsupported. It requires a planetary ephemeris for the geocenter's barycentric state. A two-term sine is not returned.",
+    );
+  }
+  throw new UnsupportedTransformation(
+    "A Mars-surface proper time is not reduced to TT. Mars24 is a function of Terrestrial Time, not a clock on Mars.",
+  );
 }
 
 export function accumulatedErrorSeconds(y: number, elapsedSeconds: number): number {
@@ -332,17 +367,21 @@ export function referenceChecks(): Check[] {
     const next = addNanoseconds(leap, NS);
     if (formatUtc(leap) !== "2016-12-31T23:59:60.000000000Z") throw new Error(formatUtc(leap));
     if (formatUtc(next) !== "2017-01-01T00:00:00.000000000Z") throw new Error(formatUtc(next));
+    if (taiMinusUtcSeconds(leap) !== 36) throw new Error("pre-leap offset");
+    if (taiMinusUtcSeconds(next) !== 37) throw new Error("post-leap offset");
   });
   check("Mars24 2000-01-06", () => {
     const state = marsSolarState(ttNanoseconds(utcToTaiNs(parseUtc("2000-01-06T00:00:00Z"))));
     near(state.solarLongitudeDeg, 277.18758, 5e-4, "Ls");
-    near(state.equationOfTimeHours, -0.34585, 5e-4, "EOT");
+    near(state.equationOfTimeHours, -0.34585, 5e-5, "EOT");
     near(state.meanSolarHours, 23.99425, 5e-4, "MST");
+    near(state.meanAnomalyDeg, 21.74558, 5e-4, "M");
   });
   check("Mars24 millis 1073137591000", () => {
     const state = marsSolarState(ttNanoseconds(utcToTaiNs(parseUtc("2004-01-03T13:46:31Z"))));
     near(state.meanSolarHours, 13.16537, 5e-4, "MST");
     near(state.solarLongitudeDeg, 327.32416, 5e-3, "Ls");
+    near(state.equationOfTimeHours, -0.85170, 5e-4, "EOT");
   });
   check("√(1−0.6²) = 0.8", () => {
     const rate = srRate(0.6 * C_M_S);
@@ -356,6 +395,17 @@ export function referenceChecks(): Check[] {
       threw = true;
     }
     if (!threw) throw new Error("accepted");
+  });
+  check("TDB and Mars proper time are refused", () => {
+    for (const kind of ["tdb", "mars-proper-time"] as const) {
+      let threw = false;
+      try {
+        unsupported(kind);
+      } catch (error) {
+        threw = error instanceof UnsupportedTransformation;
+      }
+      if (!threw) throw new Error(kind);
+    }
   });
   check("asymmetry bias Δ/2", () => {
     const sync = twoWaySync({
@@ -428,7 +478,7 @@ function requireCoverage(utc: Utc, allowExpired: boolean) {
     throw new DataCoverageError("UTC before 1972-01-01 is not implemented.");
   }
   if (!allowExpired && compareUtc(utc, expiry) >= 0) {
-    throw new DataCoverageError(`Leap-second table expires at ${LEAP_EXPIRES}.`);
+    throw new LeapTableExpired(`Leap-second table expires at ${LEAP_EXPIRES}.`);
   }
 }
 
