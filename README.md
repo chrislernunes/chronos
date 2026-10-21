@@ -258,6 +258,6 @@ Continuous integration is `.github/workflows/tests.yml` on Python 3.10, 3.11, an
 
 ## Browser console
 
-The page at [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/) is a static build of the same relations (`site/`). It does not call a server. GitHub Pages publishes it from `.github/workflows/pages.yml`.
+The source of the browser page is `site/`. It does not call a server. `.github/workflows/pages.yml` builds it. The intended address is [chrislernunes.github.io/chronos](https://chrislernunes.github.io/chronos/). GitHub will not serve that address until Pages is set to **GitHub Actions** in the repository settings. The API token used to push this repository cannot change that setting.
 
 The Python package is the reference. The page uses integer counts for UTC, TAI, and TT, and IEEE-754 for the Mars24 series and the relativistic rates. Nanosecond rounding of those irrational rates belongs to the Python package, not to the page.
